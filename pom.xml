@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- The settings of the build (Java version, formatting, versions of libraries) are the core's:
+       build the core first with './mvnw install' in ../Praksis. -->
+  <parent>
+    <groupId>it.uhde</groupId>
+    <artifactId>praksis-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath/>
+  </parent>
+
+  <artifactId>praksis-shell-parent</artifactId>
+  <packaging>pom</packaging>
+  <name>Praksis Shell</name>
+  <description>Talk to Claude (or another model) in a terminal or in the desktop program; it works with Praksis only through the MCP server and has no rights of its own.</description>
+
+  <modules>
+    <module>praksis-shell-core</module>
+    <module>praksis-shell</module>
+  </modules>
+
+  <properties>
+    <mcp.version>2.1.0</mcp.version>
+    <slf4j.version>2.0.17</slf4j.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>it.uhde</groupId>
+        <artifactId>praksis-shell-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
