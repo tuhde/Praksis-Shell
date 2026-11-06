@@ -12,11 +12,25 @@ public interface ModelClient {
    * @param toolCalls the tools it wants called
    * @param tokensIn the tokens it read, or 0 if the server did not say
    * @param tokensOut the tokens it wrote, or 0
+   * @param raw what the client wants kept with the message and handed back (see {@link
+   *     Message#raw()}), or null
+   * @param note something the person should know about this answer (the model declined, the answer
+   *     was cut), or null
    */
-  record Reply(String text, List<ToolCall> toolCalls, long tokensIn, long tokensOut) {
+  record Reply(
+      String text,
+      List<ToolCall> toolCalls,
+      long tokensIn,
+      long tokensOut,
+      Object raw,
+      String note) {
     public Reply {
       toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
       text = text == null ? "" : text;
+    }
+
+    public Reply(String text, List<ToolCall> toolCalls, long tokensIn, long tokensOut) {
+      this(text, toolCalls, tokensIn, tokensOut, null, null);
     }
   }
 
@@ -28,4 +42,9 @@ public interface ModelClient {
 
   /** The name of the model, for the person to see. */
   String name();
+
+  /** Where the data goes, for the person to see: a host name, or {@code this machine}. */
+  default String destination() {
+    return "this machine";
+  }
 }

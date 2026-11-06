@@ -11,22 +11,40 @@ import java.util.List;
  * @param toolCalls what an assistant message asks for (else empty)
  * @param toolCallId for a {@code tool} message, the id of the call it answers
  * @param toolName for a {@code tool} message, the name of the tool
+ * @param error for a {@code tool} message, whether the result is an error
+ * @param raw what the model client wants back unchanged when it sends the conversation again (for
+ *     the Anthropic API the whole answer, with its thinking blocks, which must not be edited); null
+ *     for a message that came from elsewhere
  */
 public record Message(
-    String role, String content, List<ToolCall> toolCalls, String toolCallId, String toolName) {
+    String role,
+    String content,
+    List<ToolCall> toolCalls,
+    String toolCallId,
+    String toolName,
+    boolean error,
+    Object raw) {
   public Message {
     toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
   }
 
   public static Message user(String text) {
-    return new Message("user", text, List.of(), null, null);
+    return new Message("user", text, List.of(), null, null, false, null);
   }
 
   public static Message assistant(String text, List<ToolCall> calls) {
-    return new Message("assistant", text, calls, null, null);
+    return assistant(text, calls, null);
+  }
+
+  public static Message assistant(String text, List<ToolCall> calls, Object raw) {
+    return new Message("assistant", text, calls, null, null, false, raw);
   }
 
   public static Message tool(ToolCall call, String text) {
-    return new Message("tool", text, List.of(), call.id(), call.name());
+    return tool(call, text, false);
+  }
+
+  public static Message tool(ToolCall call, String text, boolean error) {
+    return new Message("tool", text, List.of(), call.id(), call.name(), error, null);
   }
 }

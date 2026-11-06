@@ -11,7 +11,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /** A model server on loopback that answers every POST with a fixed body. */
 final class FakeServer implements AutoCloseable {
-  record Seen(String path, String body) {}
+  record Seen(String path, String body, String apiKey, String authorization, String version) {}
 
   final List<Seen> seen = new CopyOnWriteArrayList<>();
   private final HttpServer server;
@@ -24,7 +24,10 @@ final class FakeServer implements AutoCloseable {
           seen.add(
               new Seen(
                   exchange.getRequestURI().getPath(),
-                  new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+                  new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8),
+                  exchange.getRequestHeaders().getFirst("x-api-key"),
+                  exchange.getRequestHeaders().getFirst("Authorization"),
+                  exchange.getRequestHeaders().getFirst("anthropic-version")));
           byte[] out = answer.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().add("Content-Type", "application/json");
           exchange.sendResponseHeaders(status, out.length);

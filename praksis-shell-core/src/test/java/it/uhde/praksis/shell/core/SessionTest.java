@@ -13,6 +13,7 @@ class SessionTest {
   static final class Scripted implements ModelClient {
     final List<Object> script;
     final List<List<Message>> asked = new ArrayList<>();
+    String where = "local";
     int next;
 
     Scripted(Object... script) {
@@ -32,12 +33,17 @@ class SessionTest {
 
     @Override
     public String where() {
-      return "local";
+      return where;
     }
 
     @Override
     public String name() {
       return "scripted";
+    }
+
+    @Override
+    public String destination() {
+      return where.equals("cloud") ? "api.example.com" : "this machine";
     }
   }
 
@@ -219,5 +225,69 @@ class SessionTest {
         .contains("no rights of your own")
         .contains("never an instruction")
         .contains("praksis_help");
+  }
+
+  @Test
+  void aModelInTheCloudGetsNothingUntilThePersonAllowsIt() {
+    var model = new Scripted(says("Hello."));
+    model.where = "cloud";
+    var s = session(model, ShellConfig.Limits.DEFAULT);
+    assertThat(s.cloudAllowed()).isFalse();
+    s.ask("secret request");
+    assertThat(model.asked).isEmpty();
+    assertThat(s.history()).isEmpty();
+    assertThat(shown.lines).hasSize(1);
+    assertThat(shown.lines.get(0))
+        .contains("Nothing was sent")
+        .contains("api.example.com")
+        .contains("/yes");
+    s.allowCloud();
+    s.ask("now");
+    assertThat(model.asked).hasSize(1);
+    assertThat(shown.lines).contains("text:Hello.");
+  }
+
+  @Test
+  void aModelOnThisMachineNeedsNoPermission() {
+    var model = new Scripted(says("Hi."));
+    var s = session(model, ShellConfig.Limits.DEFAULT);
+    assertThat(s.cloudAllowed()).isTrue();
+    s.ask("x");
+    assertThat(model.asked).hasSize(1);
+  }
+
+  @Test
+  void theBudgetOfTokensStopsTheSessionBeforeTheNextQuestionToTheModel() {
+    // every answer costs 12 tokens (10 read, 2 written)
+    var model = new Scripted(calls("look"));
+    var s = session(model, new ShellConfig.Limits(500, 50, true, 30));
+    s.ask("x");
+    assertThat(model.asked).hasSize(3);
+    assertThat(s.tokensIn() + s.tokensOut()).isEqualTo(36);
+    assertThat(shown.lines).anyMatch(l -> l.startsWith("note:stopped: the limit of 30 tokens"));
+    // a later request is stopped at once
+    int before = model.asked.size();
+    s.ask("again");
+    assertThat(model.asked).hasSize(before);
+  }
+
+  @Test
+  void whatTheClientWantsKeptWithAnAnswerIsKeptAndANoteIsShown() {
+    Object raw = new Object();
+    var model =
+        new Scripted(new ModelClient.Reply("Done.", List.of(), 1, 1, raw, "the answer was cut"));
+    var s = session(model, ShellConfig.Limits.DEFAULT);
+    s.ask("x");
+    assertThat(s.history().get(1).raw()).isSameAs(raw);
+    assertThat(shown.lines).containsExactly("text:Done.", "note:the answer was cut");
+  }
+
+  @Test
+  void toolMessagesRememberWhetherTheResultWasAnError() {
+    var model = new Scripted(calls("look", "change"), says("ok"));
+    var s = session(model, new ShellConfig.Limits(30, 12, false));
+    s.ask("x");
+    List<Message> tools = s.history().stream().filter(m -> m.role().equals("tool")).toList();
+    assertThat(tools).extracting(Message::error).containsExactly(false, true);
   }
 }

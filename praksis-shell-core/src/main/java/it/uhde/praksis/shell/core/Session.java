@@ -28,6 +28,7 @@ public final class Session {
   private final Listener listener;
   private final ShellConfig.Limits limits;
   private final List<Message> history = new ArrayList<>();
+  private boolean cloudAllowed;
   private int toolCalls;
   private long tokensIn;
   private long tokensOut;
@@ -42,6 +43,28 @@ public final class Session {
 
   public int toolCalls() {
     return toolCalls;
+  }
+
+  /** Where the model runs: {@code local} or {@code cloud}. */
+  public String where() {
+    return model.where();
+  }
+
+  /** The host that receives the conversation, or {@code this machine}. */
+  public String destination() {
+    return model.destination();
+  }
+
+  /**
+   * The person allows this session to send the conversation to a model in the cloud. Only a front
+   * end calls this, from something the person typed or clicked; nothing the model says can.
+   */
+  public void allowCloud() {
+    cloudAllowed = true;
+  }
+
+  public boolean cloudAllowed() {
+    return !"cloud".equals(model.where()) || cloudAllowed;
   }
 
   public long tokensIn() {
@@ -63,8 +86,27 @@ public final class Session {
 
   /** Handles one request of the person; the model's words go to the listener. */
   public void ask(String request) {
+    if (!cloudAllowed()) {
+      listener.note(
+          "Nothing was sent. This model runs in the cloud ("
+              + model.destination()
+              + "): your requests and the results of tools, which can contain mail text, would be"
+              + " sent there. Type /yes to allow that for this session.");
+      return;
+    }
     history.add(Message.user(request));
     for (int turn = 1; turn <= limits.maxTurns(); turn++) {
+      if (limits.maxTokens() > 0 && tokensIn + tokensOut >= limits.maxTokens()) {
+        listener.note(
+            "stopped: the limit of "
+                + limits.maxTokens()
+                + " tokens for this session is reached ("
+                + tokensIn
+                + " read, "
+                + tokensOut
+                + " written)");
+        return;
+      }
       ModelClient.Reply reply;
       try {
         reply = model.chat(SYSTEM, history, tools.tools());
@@ -74,15 +116,19 @@ public final class Session {
       }
       tokensIn += reply.tokensIn();
       tokensOut += reply.tokensOut();
-      history.add(Message.assistant(reply.text(), reply.toolCalls()));
+      history.add(Message.assistant(reply.text(), reply.toolCalls(), reply.raw()));
       if (!reply.text().isBlank()) {
         listener.text(reply.text());
+      }
+      if (reply.note() != null) {
+        listener.note(reply.note());
       }
       if (reply.toolCalls().isEmpty()) {
         return;
       }
       for (ToolCall call : reply.toolCalls()) {
-        history.add(Message.tool(call, run(call)));
+        Outcome outcome = run(call);
+        history.add(Message.tool(call, outcome.text(), outcome.error()));
       }
     }
     listener.note(
@@ -92,7 +138,9 @@ public final class Session {
             + " to go on");
   }
 
-  private String run(ToolCall call) {
+  private record Outcome(String text, boolean error) {}
+
+  private Outcome run(ToolCall call) {
     boolean writes =
         tools.tools().stream()
             .filter(t -> t.name().equals(call.name()))
@@ -101,17 +149,17 @@ public final class Session {
             .orElse(false);
     if (toolCalls >= limits.maxToolCalls()) {
       listener.note("the limit of " + limits.maxToolCalls() + " tool calls is reached");
-      return "refused: the limit of tool calls of this session is reached";
+      return new Outcome("refused: the limit of tool calls of this session is reached", true);
     }
     toolCalls++;
     listener.toolCall(call, writes);
     if (writes && limits.confirmTools() && !listener.confirm(call)) {
       listener.note("declined: " + call.name());
-      return "the person declined this call";
+      return new Outcome("the person declined this call", true);
     }
     ToolBridge.Result result = tools.call(call.name(), call.arguments());
     listener.toolResult(call, result);
-    return result.error() ? "error: " + result.text() : result.text();
+    return new Outcome(result.error() ? "error: " + result.text() : result.text(), result.error());
   }
 
   /** A fixed answer for tests and for a front end that wants to show the arguments. */

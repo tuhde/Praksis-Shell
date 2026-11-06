@@ -30,10 +30,14 @@ import java.util.Map;
  * token_env = "PRAKSIS_TOKEN"           # the variable that holds the token
  *
  * [session]
- * max_tool_calls = 30
- * max_turns      = 12
- * confirm_tools  = true
+ * max_tool_calls         = 30
+ * max_turns              = 12
+ * confirm_tools          = true
+ * max_tokens_per_session = 200000    # default for a cloud model; none for a local one
  * </pre>
+ *
+ * <p>A model in the cloud is {@code api = "anthropic"}, {@code data = "cloud"} and either {@code
+ * key_env = "ANTHROPIC_API_KEY"} or {@code key_command = ["kwallet-query", ...]}.
  *
  * <p>The token is never in this file: only the name of the environment variable that holds it.
  *
@@ -60,10 +64,18 @@ public record ShellConfig(
    * @param maxToolCalls tool calls in one session
    * @param maxTurns answers of the model for one request of the person
    * @param confirmTools whether the person is asked before a tool that may change something
+   * @param maxTokens the tokens read and written in one session, or 0 for no limit
    */
-  public record Limits(int maxToolCalls, int maxTurns, boolean confirmTools) {
-    public static final Limits DEFAULT = new Limits(30, 12, true);
+  public record Limits(int maxToolCalls, int maxTurns, boolean confirmTools, long maxTokens) {
+    public static final Limits DEFAULT = new Limits(30, 12, true, 0);
+
+    public Limits(int maxToolCalls, int maxTurns, boolean confirmTools) {
+      this(maxToolCalls, maxTurns, confirmTools, 0);
+    }
   }
+
+  /** The limit of tokens in a session for a model in the cloud, unless the configuration says. */
+  public static final long CLOUD_TOKEN_LIMIT = 200_000;
 
   private static final TomlMapper TOML = new TomlMapper();
 
@@ -98,7 +110,9 @@ public record ShellConfig(
               str(p, "data"),
               p.has("timeout_ms") ? p.get("timeout_ms").asInt() : null,
               p.has("max_output_tokens") ? p.get("max_output_tokens").asInt() : null,
-              p.has("temperature") ? p.get("temperature").asDouble() : null));
+              p.has("temperature") ? p.get("temperature").asDouble() : null,
+              str(p, "key_env"),
+              strings(p, "key_command")));
     }
     if (profiles.isEmpty()) {
       throw new IllegalArgumentException("the configuration needs a [profile.NAME] section");
@@ -134,11 +148,16 @@ public record ShellConfig(
           "[mcp] mode must be \"read-only\", \"propose\" or \"commands\"");
     }
     JsonNode s = root.path("session");
+    long tokens =
+        s.has("max_tokens_per_session")
+            ? bounded(s, "max_tokens_per_session", 0, 1000, 100_000_000)
+            : profiles.get(chosen).cloud() ? CLOUD_TOKEN_LIMIT : 0;
     Limits limits =
         new Limits(
             bounded(s, "max_tool_calls", 30, 1, 500),
             bounded(s, "max_turns", 12, 1, 100),
-            !s.has("confirm_tools") || s.get("confirm_tools").asBoolean(true));
+            !s.has("confirm_tools") || s.get("confirm_tools").asBoolean(true),
+            tokens);
     return new ShellConfig(
         Map.copyOf(profiles),
         chosen,
@@ -153,6 +172,17 @@ public record ShellConfig(
     return profiles.get(defaultProfile);
   }
 
+  private static List<String> strings(JsonNode n, String field) {
+    if (!n.has(field)) {
+      return null;
+    }
+    List<String> out = new ArrayList<>();
+    for (JsonNode e : n.get(field)) {
+      out.add(e.asText());
+    }
+    return out;
+  }
+
   private static String str(JsonNode n, String field) {
     return n.has(field) && !n.get(field).isNull() ? n.get(field).asText() : null;
   }
@@ -161,11 +191,11 @@ public record ShellConfig(
     if (!n.has(field)) {
       return fallback;
     }
-    int v = n.get(field).asInt(-1);
+    long v = n.get(field).asLong(-1);
     if (v < min || v > max) {
       throw new IllegalArgumentException(
           "[session] " + field + " must be between " + min + " and " + max);
     }
-    return v;
+    return (int) v;
   }
 }

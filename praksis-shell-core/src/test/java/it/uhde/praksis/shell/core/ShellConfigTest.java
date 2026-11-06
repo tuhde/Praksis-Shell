@@ -70,7 +70,7 @@ class ShellConfigTest {
 
   @Test
   void checksTheOtherSettings() {
-    assertThatThrownBy(() -> ShellConfig.parse(GOOD.replace("\"ollama\"", "\"anthropic\"")))
+    assertThatThrownBy(() -> ShellConfig.parse(GOOD.replace("\"ollama\"", "\"cohere\"")))
         .hasMessageContaining("api must be");
     assertThatThrownBy(() -> ShellConfig.parse(GOOD.replace("model = \"llama3.1\"", "")))
         .hasMessageContaining("model is required");
@@ -99,5 +99,80 @@ class ShellConfigTest {
         ShellConfig.parse(
             GOOD + "[session]\nmax_tool_calls = 5\nmax_turns = 3\nconfirm_tools = false\n");
     assertThat(c.limits()).isEqualTo(new ShellConfig.Limits(5, 3, false));
+  }
+
+  static final String CLOUD =
+      """
+      default = "claude"
+
+      [profile.claude]
+      api       = "anthropic"
+      model     = "claude-sonnet-5-5"
+      data      = "cloud"
+      key_env   = "ANTHROPIC_API_KEY"
+
+      [mcp]
+      command = ["java", "-jar", "/opt/praksis-mcp.jar"]
+      """;
+
+  @Test
+  void aModelInTheCloudNeedsDataCloudAnHttpsAddressAndExactlyOneKeySource() {
+    ShellConfig c = ShellConfig.parse(CLOUD);
+    assertThat(c.profile().cloud()).isTrue();
+    assertThat(c.profile().base().toString()).isEqualTo("https://api.anthropic.com");
+    assertThat(c.profile().keyEnv()).isEqualTo("ANTHROPIC_API_KEY");
+    // a budget of tokens comes with a model in the cloud
+    assertThat(c.limits().maxTokens()).isEqualTo(ShellConfig.CLOUD_TOKEN_LIMIT);
+    assertThat(
+            ShellConfig.parse(CLOUD + "[session]\nmax_tokens_per_session = 5000\n")
+                .limits()
+                .maxTokens())
+        .isEqualTo(5000);
+
+    assertThatThrownBy(() -> ShellConfig.parse(CLOUD.replace("\"cloud\"", "\"local\"")))
+        .hasMessageContaining("needs data = \"cloud\"");
+    assertThatThrownBy(
+            () ->
+                ShellConfig.parse(
+                    CLOUD.replace("model     =", "url = \"http://api.example.com\"\nmodel     =")))
+        .hasMessageContaining("https://");
+    assertThatThrownBy(
+            () -> ShellConfig.parse(CLOUD.replace("key_env   = \"ANTHROPIC_API_KEY\"", "")))
+        .hasMessageContaining("exactly one of key_env");
+    assertThatThrownBy(
+            () ->
+                ShellConfig.parse(
+                    CLOUD.replace(
+                        "key_env   = \"ANTHROPIC_API_KEY\"",
+                        "key_env = \"A\"\nkey_command = [\"x\"]")))
+        .hasMessageContaining("exactly one of key_env");
+    assertThatThrownBy(
+            () -> ShellConfig.parse(CLOUD.replace("data      =", "temperature = 0.2\ndata      =")))
+        .hasMessageContaining("no longer accepts temperature");
+  }
+
+  @Test
+  void aKeyCommandIsAList() {
+    ShellConfig c =
+        ShellConfig.parse(
+            CLOUD.replace(
+                "key_env   = \"ANTHROPIC_API_KEY\"",
+                "key_command = [\"kwallet-query\", \"-r\", \"k\"]"));
+    assertThat(c.profile().keyCommand()).containsExactly("kwallet-query", "-r", "k");
+    assertThat(c.profile().keyEnv()).isNull();
+  }
+
+  @Test
+  void aKeySourceBelongsToAModelInTheCloudOnly() {
+    assertThatThrownBy(
+            () ->
+                ShellConfig.parse(
+                    GOOD.replace("data  = \"local\"", "data = \"local\"\nkey_env = \"X\"")))
+        .hasMessageContaining("key_env and key_command are for api = \"anthropic\"");
+  }
+
+  @Test
+  void aLocalModelHasNoTokenLimitUnlessOneIsSet() {
+    assertThat(ShellConfig.parse(GOOD).limits().maxTokens()).isZero();
   }
 }

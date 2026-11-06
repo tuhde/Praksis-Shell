@@ -34,6 +34,12 @@
       <artifactId>mcp-json-jackson2</artifactId>
       <version>${mcp.version}</version>
     </dependency>
+    <!-- the official SDK, for the Anthropic API (the local models use plain HTTP) -->
+    <dependency>
+      <groupId>com.anthropic</groupId>
+      <artifactId>anthropic-java</artifactId>
+      <version>${anthropic.version}</version>
+    </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>

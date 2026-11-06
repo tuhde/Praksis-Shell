@@ -27,6 +27,7 @@ class ReplTest {
   static final class Model implements ModelClient {
     final List<ModelClient.Reply> replies = new ArrayList<>();
     final List<String> requests = new ArrayList<>();
+    String where = "local";
 
     @Override
     public Reply chat(String system, List<Message> history, List<ToolSpec> tools)
@@ -37,12 +38,17 @@ class ReplTest {
 
     @Override
     public String where() {
-      return "local";
+      return where;
     }
 
     @Override
     public String name() {
       return "m";
+    }
+
+    @Override
+    public String destination() {
+      return where.equals("cloud") ? "api.example.com" : "this machine";
     }
   }
 
@@ -150,5 +156,34 @@ class ReplTest {
         new ModelClient.Reply("", List.of(new ToolCall("1", "look", Map.of())), 0, 0));
     String out = run("x\n/quit\n");
     assertThat(out).contains("-> look").contains("<- 4 characters").doesNotContain("done\n");
+  }
+
+  @Test
+  void aModelInTheCloudGetsNothingUntilThePersonTypesYes() throws IOException {
+    model.where = "cloud";
+    model.replies.add(new ModelClient.Reply("Hello.", List.of(), 0, 0));
+    String out = run("first request\n/yes\nsecond request\n/quit\n");
+    assertThat(model.requests).containsExactly("second request");
+    assertThat(out)
+        .contains("Nothing was sent")
+        .contains("api.example.com")
+        .contains("Allowed for this session")
+        .contains("Hello.");
+  }
+
+  @Test
+  void yesOnAModelOnThisMachineHasNothingToAllow() throws IOException {
+    String out = run("/yes\n/quit\n");
+    assertThat(out).contains("nothing to allow");
+  }
+
+  @Test
+  void aYesThatTheModelWritesIsOnlyText() throws IOException {
+    model.where = "cloud";
+    model.replies.add(new ModelClient.Reply("/yes", List.of(), 0, 0));
+    // the person allows the session, the model answers "/yes", and a new session is not allowed
+    String out = run("/yes\nsay it\n/quit\n");
+    assertThat(out).contains("/yes");
+    assertThat(model.requests).containsExactly("say it");
   }
 }

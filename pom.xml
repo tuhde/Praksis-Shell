@@ -27,6 +27,7 @@
   <properties>
     <mcp.version>2.1.0</mcp.version>
     <slf4j.version>2.0.17</slf4j.version>
+    <anthropic.version>3.6.0</anthropic.version>
   </properties>
 
   <dependencyManagement>

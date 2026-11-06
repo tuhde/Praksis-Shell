@@ -53,6 +53,17 @@ final class Repl {
       case "/quit", "/exit" -> {
         return false;
       }
+      case "/yes" -> {
+        if (session.cloudAllowed() && session.where().equals("local")) {
+          out.println("This model runs on this machine; there is nothing to allow.");
+        } else {
+          session.allowCloud();
+          out.println(
+              "Allowed for this session: requests and tool results go to "
+                  + Terminal.clean(session.destination())
+                  + ".");
+        }
+      }
       case "/clear" -> {
         session.clear();
         out.println("The conversation is forgotten.");
@@ -64,7 +75,7 @@ final class Repl {
       case "/help" ->
           out.println(
               "Type a request. Commands: /tools (the tools Claude has), /clear (forget the"
-                  + " conversation), /quit.\nApprovals, grants and plans are decided in the"
+                  + " conversation), /yes (allow a model in the cloud to receive this session), /quit.\nApprovals, grants and plans are decided in the"
                   + " desktop program or with the praksis command, not here.");
       default -> out.println("Unknown command " + Terminal.shorten(line, 40) + " (try /help).");
     }

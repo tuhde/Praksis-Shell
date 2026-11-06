@@ -19,15 +19,16 @@ public final class Main {
   public static void main(String[] args) throws IOException {
     ShellConfig config;
     McpBridge tools;
+    ModelClient model;
     try {
       config = ShellConfig.load(configFile());
+      model = Models.of(config.profile(), System::getenv);
       tools = McpBridge.start(config, System::getenv);
     } catch (IllegalArgumentException | IllegalStateException e) {
       System.err.println("praksis-shell: " + e.getMessage());
       System.exit(2);
       return;
     }
-    ModelClient model = Models.of(config.profile());
     var in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
     var listener = new TerminalListener(System.out, in);
     var session = new Session(model, tools, listener, config.limits());
@@ -44,6 +45,12 @@ public final class Main {
                 ? ", asks before a tool that may change something"
                 : "")
             + ". /help for help.");
+    if (model.where().equals("cloud")) {
+      System.out.println(
+          "This model runs in the cloud ("
+              + model.destination()
+              + "). Nothing is sent until you type /yes.");
+    }
     try {
       new Repl(session, tools, in, System.out).run();
     } finally {
