@@ -28,8 +28,34 @@
     </dependency>
   </dependencies>
 
+  <properties>
+    <praksis.image>${project.basedir}/../../Praksis/praksis-dist/target/praksis</praksis.image>
+    <praksis.mcp.jar>${project.basedir}/../../Praksis-MCP/target/praksis-mcp.jar</praksis.mcp.jar>
+  </properties>
+
   <build>
     <plugins>
+      <!-- The integration test runs the real daemon (the runtime image of the core) and the real
+           MCP server (the jar of Praksis-MCP): build both first, or point praksis.image and
+           praksis.mcp.jar at them. Without them the test is skipped, and says so. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <systemPropertyVariables>
+            <praksis.image>${praksis.image}</praksis.image>
+            <praksis.mcp.jar>${praksis.mcp.jar}</praksis.mcp.jar>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
       <!-- one runnable jar: java -jar target/praksis-shell.jar -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

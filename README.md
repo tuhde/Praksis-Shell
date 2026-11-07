@@ -143,6 +143,22 @@ channel (what it sends, that nothing it prints reaches the model, that nothing t
 reaches the daemon). No test
 calls the real Anthropic API.
 
+`./mvnw verify` then runs `LiveShellIT` with the **real daemon** (the runtime image of the core) and
+the **real MCP server** (the jar of Praksis-MCP), with a scripted model as the only fake: a mail with
+a hostile subject is delivered, and an agent that does what the mail says finds no tool to act on
+it, cannot approve the request, and leaves it pending; the person then allows it with `/allow`, and
+what the person saw never reached the model. It needs the image and the jar (`./mvnw package` in
+`../Praksis` and in `../Praksis-MCP`, or `-Dpraksis.image=<dir> -Dpraksis.mcp.jar=<file>`); without
+them it is skipped and says so.
+
+`./mvnw verify` then runs `LiveShellIT` with the **real daemon** (the runtime image of the core) and
+the **real MCP server** (the jar of Praksis-MCP), with a scripted model as the only fake: a mail with
+a hostile subject is delivered, and an agent that does what the mail says finds no tool to act on
+it, cannot approve the request, and leaves it pending; the person then allows it with `/allow`, and
+what the person saw never reached the model. It needs the image and the jar (`./mvnw package` in
+`../Praksis` and in `../Praksis-MCP`, or `-Dpraksis.image=<dir> -Dpraksis.mcp.jar=<file>`); without
+them it is skipped and says so.
+
 ## License
 
 Apache-2.0.
