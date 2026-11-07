@@ -20,6 +20,12 @@
       <groupId>it.uhde</groupId>
       <artifactId>praksis-shell-core</artifactId>
     </dependency>
+    <!-- the person's channel talks to the daemon on its Unix socket, as the praksis command does -->
+    <dependency>
+      <groupId>it.uhde</groupId>
+      <artifactId>praksis-protocol</artifactId>
+      <version>${project.version}</version>
+    </dependency>
   </dependencies>
 
   <build>

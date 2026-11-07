@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package it.uhde.praksis.shell;
 
+import it.uhde.praksis.protocol.Client;
 import it.uhde.praksis.shell.core.McpBridge;
 import it.uhde.praksis.shell.core.ModelClient;
 import it.uhde.praksis.shell.core.Models;
@@ -32,6 +33,17 @@ public final class Main {
     var in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
     var listener = new TerminalListener(System.out, in);
     var session = new Session(model, tools, listener, config.limits());
+    Path home = DaemonHome.of(config, System::getenv, Path.of(System.getProperty("user.home")));
+    PersonChannel channel =
+        new PersonChannel(
+            request -> {
+              try (var client = Client.connect(DaemonHome.socket(home))) {
+                return client.send(request);
+              }
+            },
+            DaemonHome.socket(home).toString(),
+            in,
+            System.out);
     System.out.println(
         "Praksis Shell. Model "
             + model.name()
@@ -52,7 +64,7 @@ public final class Main {
               + "). Nothing is sent until you type /yes.");
     }
     try {
-      new Repl(session, tools, in, System.out).run();
+      new Repl(session, tools, channel, in, System.out).run();
     } finally {
       tools.close();
       System.out.println(

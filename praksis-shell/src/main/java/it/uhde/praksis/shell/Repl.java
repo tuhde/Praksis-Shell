@@ -17,10 +17,17 @@ final class Repl {
   private final ToolBridge tools;
   private final BufferedReader in;
   private final PrintStream out;
+  private final PersonChannel channel;
 
-  Repl(Session session, ToolBridge tools, BufferedReader in, PrintStream out) {
+  Repl(
+      Session session,
+      ToolBridge tools,
+      PersonChannel channel,
+      BufferedReader in,
+      PrintStream out) {
     this.session = session;
     this.tools = tools;
+    this.channel = channel;
     this.in = in;
     this.out = out;
   }
@@ -49,6 +56,16 @@ final class Repl {
 
   /** Handles a command of the person; false means leave. */
   private boolean command(String line) {
+    if (PersonChannel.handles(line)) {
+      // the person's channel: typed by the person, shown to the person, never given to the model
+      if (channel == null) {
+        out.println(
+            "There is no daemon configured for these commands (see [daemon] in shell.toml).");
+      } else {
+        channel.run(line);
+      }
+      return true;
+    }
     switch (line) {
       case "/quit", "/exit" -> {
         return false;
@@ -88,8 +105,13 @@ final class Repl {
       case "/help" ->
           out.println(
               "Type a request. Commands: /tools (the tools Claude has), /usage (tokens spent),"
-                  + " /clear (forget the conversation), /yes (allow a model in the cloud to receive this session), /quit.\nApprovals, grants and plans are decided in the"
-                  + " desktop program or with the praksis command, not here.");
+                  + " /clear (forget the conversation), /yes (allow a model in the cloud to"
+                  + " receive this session), /quit.\n"
+                  + "Your own commands to the daemon, which Claude never sees: /approvals,"
+                  + " /allow <id> (once), /deny <id>, /plans, /plan <id>, /plan-run <id>,"
+                  + " /plan-drop <id>.\n"
+                  + "A grant that lasts, and changes to the ruleset, are for the desktop program"
+                  + " or the praksis command.");
       default -> out.println("Unknown command " + Terminal.shorten(line, 40) + " (try /help).");
     }
     return true;

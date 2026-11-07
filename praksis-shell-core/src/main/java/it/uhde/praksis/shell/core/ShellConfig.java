@@ -29,6 +29,9 @@ import java.util.Map;
  * mode      = "propose"                 # read-only, propose or commands
  * token_env = "PRAKSIS_TOKEN"           # the variable that holds the token
  *
+ * [daemon]                            # where the person's own commands go (the Unix socket)
+ * home     = "/home/me/.praksis"     # or identity = "private" for ~/.praksis-private
+ *
  * [session]
  * max_tool_calls         = 30
  * max_turns              = 12
@@ -48,6 +51,8 @@ import java.util.Map;
  * @param mcpMode the mode of the MCP server
  * @param tokenEnv the name of the environment variable with the token
  * @param limits the limits of a session
+ * @param daemonHome the home directory of the daemon for the person's own commands, or null
+ * @param daemonIdentity the identity (home {@code ~/.praksis-NAME}), or null
  */
 public record ShellConfig(
     Map<String, Profile> profiles,
@@ -56,7 +61,9 @@ public record ShellConfig(
     String mcpUrl,
     String mcpMode,
     String tokenEnv,
-    Limits limits) {
+    Limits limits,
+    String daemonHome,
+    String daemonIdentity) {
 
   /**
    * What a session may spend.
@@ -165,7 +172,9 @@ public record ShellConfig(
         mcp.has("url") ? mcp.get("url").asText() : "http://127.0.0.1:8484",
         mode,
         mcp.has("token_env") ? mcp.get("token_env").asText() : "PRAKSIS_TOKEN",
-        limits);
+        limits,
+        str(root.path("daemon"), "home"),
+        str(root.path("daemon"), "identity"));
   }
 
   public Profile profile() {

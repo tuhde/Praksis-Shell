@@ -27,6 +27,7 @@ class ReplTest {
   static final class Model implements ModelClient {
     final List<ModelClient.Reply> replies = new ArrayList<>();
     final List<String> requests = new ArrayList<>();
+    final List<List<Message>> histories = new ArrayList<>();
     List<String> pieces;
     String where = "local";
 
@@ -34,6 +35,7 @@ class ReplTest {
     public Reply chat(String system, List<Message> history, List<ToolSpec> tools)
         throws ModelException {
       requests.add(history.get(history.size() - 1).content());
+      histories.add(List.copyOf(history));
       return replies.isEmpty() ? new Reply("fine", List.of(), 0, 0) : replies.remove(0);
     }
 
@@ -99,7 +101,7 @@ class ReplTest {
     var in = new BufferedReader(new StringReader(input));
     var session =
         new Session(model, bridge, new TerminalListener(print, in), ShellConfig.Limits.DEFAULT);
-    new Repl(session, bridge, in, print).run();
+    new Repl(session, bridge, null, in, print).run();
     return out.toString(StandardCharsets.UTF_8);
   }
 
@@ -121,7 +123,7 @@ class ReplTest {
         .contains("/clear")
         .contains("forgotten")
         .contains("Unknown command");
-    assertThat(out).contains("decided in the desktop program");
+    assertThat(out).contains("for the desktop program or the praksis command");
   }
 
   @Test

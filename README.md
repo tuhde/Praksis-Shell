@@ -88,7 +88,32 @@ model declined and why).
 - If the model stops in the middle of an answer (nothing for `timeout_ms`, or the connection
   breaks), the text so far stays on the screen, a note says why, and the half answer is not part of
   the conversation.
-- Commands: `/tools`, `/usage`, `/clear`, `/yes`, `/help`, `/quit`.
+- Commands: `/tools`, `/usage`, `/clear`, `/yes`, `/help`, `/quit`, and your own commands to the
+  daemon (next section).
+
+## Your own channel to the daemon
+
+Claude proposes; you decide. These commands go to the **Unix socket of the daemon**, where no token
+reaches, as the `praksis` command does:
+
+| Command | What it does |
+|---|---|
+| `/approvals` | lists the requests that wait (which rule wants which capability, with what) |
+| `/allow <id>` | shows the request and allows it **once**, after you answer `y` |
+| `/deny <id>` | denies it |
+| `/plans`, `/plan <id>` | lists the plans Claude made, or shows one with every step, `NOT COVERED` by the grants, and `CHECK:` for a value that was not in your request |
+| `/plan-run <id>` | shows the plan and runs it only when you type its id |
+| `/plan-drop <id>` | throws it away |
+
+A grant that lasts (`always`), and every change to the ruleset, stay with the desktop program or
+`praksis approvals`, where the text of the grant is in front of you. The commands find the daemon
+like the `praksis` command does: `[daemon] home = "~/.praksis"` or `identity = "private"` in
+`shell.toml`, else `$PRAKSIS_HOME`, `$PRAKSIS_IDENTITY`, else `~/.praksis`.
+
+**Claude never sees any of it.** What these commands print is shown to you and is not part of the
+conversation; the shell handles a line that starts with one of them itself and never forwards it,
+and a `/allow 3` that the model writes is only text on the screen. Text that comes from the daemon
+(a mail subject in the arguments of a request) is cleaned of escape sequences before it is printed.
 
 ## What is kept apart
 
@@ -113,7 +138,9 @@ model declined and why).
 and the answers, with and without streaming, for the Anthropic API through the SDK; a stream that
 stops is given up), the key sources, the loop with a scripted
 model (calls, declined calls, the budgets, the turns, the permission for the cloud, an error of the
-model), the MCP bridge against a real MCP server in its own process, and the terminal. No test
+model), the MCP bridge against a real MCP server in its own process, the terminal, and your
+channel (what it sends, that nothing it prints reaches the model, that nothing the model writes
+reaches the daemon). No test
 calls the real Anthropic API.
 
 ## License
