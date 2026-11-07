@@ -12,6 +12,9 @@ next. The core is its own module,
 `praksis-shell-core` (the loop, the model clients, the MCP client; no terminal and no JavaFX), so
 that the desktop program can use it.
 
+The full guide is the page "Talking to Claude in the terminal (the Claude Shell)" in the
+documentation of Praksis, `docs/user/shell.md`.
+
 ## Try it
 
 1. Turn on the web door of the daemon and make a token (see "Letting an agent use Praksis" in the
