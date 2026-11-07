@@ -20,7 +20,9 @@
   <description>Talk to Claude (or another model) in a terminal or in the desktop program; it works with Praksis only through the MCP server and has no rights of its own.</description>
 
   <modules>
+    <module>praksis-shell-api</module>
     <module>praksis-shell-core</module>
+    <module>praksis-shell-engine</module>
     <module>praksis-shell</module>
   </modules>
 
@@ -32,6 +34,11 @@
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>it.uhde</groupId>
+        <artifactId>praksis-shell-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
       <dependency>
         <groupId>it.uhde</groupId>
         <artifactId>praksis-shell-core</artifactId>

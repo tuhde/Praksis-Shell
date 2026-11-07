@@ -17,6 +17,10 @@
 
   <dependencies>
     <dependency>
+      <groupId>it.uhde</groupId>
+      <artifactId>praksis-shell-api</artifactId>
+    </dependency>
+    <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
     </dependency>

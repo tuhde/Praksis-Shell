@@ -6,6 +6,14 @@ daemon **only through its MCP server**
 rules and history, checks branches of a layer and hands you proposals. Approvals, grants and plans
 stay with you, in the desktop program or with the `praksis` command; the model has no tool for them.
 
+**Modules:** `praksis-shell-api` (the contract, JDK types only), `praksis-shell-core` (the loop, the
+model clients, the MCP client; no terminal and no JavaFX), `praksis-shell-engine` (the core with
+everything it needs in one jar, without the API, to be loaded by a program in a class loader of its
+own) and `praksis-shell` (the terminal). `./mvnw install` installs all of them, so that the desktop
+program finds the API and the engine in `~/.m2`. Use `./mvnw clean install` after a change: the
+shaded engine jar can keep an old class of the core otherwise (found when a fix did not arrive in
+it).
+
 **Status:** a model on this machine (the Ollama API or an OpenAI-compatible server) or the
 Anthropic API (through the official Java SDK), with streaming. The tab in Praksis Desktop comes
 next. The core is its own module,
