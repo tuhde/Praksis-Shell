@@ -27,6 +27,7 @@ class ReplTest {
   static final class Model implements ModelClient {
     final List<ModelClient.Reply> replies = new ArrayList<>();
     final List<String> requests = new ArrayList<>();
+    List<String> pieces;
     String where = "local";
 
     @Override
@@ -34,6 +35,22 @@ class ReplTest {
         throws ModelException {
       requests.add(history.get(history.size() - 1).content());
       return replies.isEmpty() ? new Reply("fine", List.of(), 0, 0) : replies.remove(0);
+    }
+
+    @Override
+    public Reply chat(
+        String system,
+        List<Message> history,
+        List<ToolSpec> tools,
+        java.util.function.Consumer<String> onText)
+        throws ModelException {
+      Reply reply = chat(system, history, tools);
+      if (pieces != null) {
+        pieces.forEach(onText);
+      } else if (!reply.text().isEmpty()) {
+        onText.accept(reply.text());
+      }
+      return reply;
     }
 
     @Override
@@ -185,5 +202,34 @@ class ReplTest {
     String out = run("/yes\nsay it\n/quit\n");
     assertThat(out).contains("/yes");
     assertThat(model.requests).containsExactly("say it");
+  }
+
+  @Test
+  void streamedTextIsPrintedAsOneBlockAndAUsageLineFollows() throws IOException {
+    model.pieces = List.of("Hel", "lo ", "there\u001b[2J");
+    model.replies.add(new ModelClient.Reply("Hello there", List.of(), 1500, 40));
+    String out = run("hi\n/quit\n");
+    assertThat(out).contains("\nHello there\uFFFD[2J\n");
+    assertThat(out).doesNotContain("\u001b");
+    assertThat(out).contains("[tokens: 1.5k read, 40 written]");
+  }
+
+  @Test
+  void usageShowsTheTokensTheLimitAndTheToolCalls() throws IOException {
+    model.replies.add(
+        new ModelClient.Reply("", List.of(new ToolCall("1", "look", Map.of())), 900, 10));
+    model.replies.add(new ModelClient.Reply("Done.", List.of(), 1200, 20));
+    String out = run("x\n/usage\n/quit\n");
+    assertThat(out)
+        .contains("Tokens in this session: 2.1k read, 30 written, no limit; 1 tool calls.");
+    assertThat(model.requests).containsExactly("x", "done");
+  }
+
+  @Test
+  void countsAreShortAndReadable() {
+    assertThat(Terminal.count(0)).isEqualTo("0");
+    assertThat(Terminal.count(999)).isEqualTo("999");
+    assertThat(Terminal.count(12_345)).isEqualTo("12.3k");
+    assertThat(Terminal.count(2_500_000)).isEqualTo("2.5M");
   }
 }

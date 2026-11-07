@@ -4,6 +4,7 @@ package it.uhde.praksis.shell.core;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.JsonValue;
+import com.anthropic.core.http.StreamResponse;
 import com.anthropic.errors.AnthropicException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
@@ -11,10 +12,12 @@ import com.anthropic.errors.OverloadedException;
 import com.anthropic.errors.PermissionDeniedException;
 import com.anthropic.errors.RateLimitException;
 import com.anthropic.errors.UnauthorizedException;
+import com.anthropic.helpers.MessageAccumulator;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
+import com.anthropic.models.messages.RawMessageStreamEvent;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolResultBlockParam;
@@ -25,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * The Anthropic API, through the official SDK. The model runs in the cloud: the person has said so
@@ -71,6 +75,39 @@ public final class AnthropicModel implements ModelClient {
   @Override
   public Reply chat(String system, List<Message> history, List<ToolSpec> tools)
       throws ModelException {
+    MessageCreateParams request = params(system, history, tools);
+    try {
+      return reply(client.messages().create(request));
+    } catch (AnthropicException e) {
+      throw failure(e);
+    }
+  }
+
+  @Override
+  public Reply chat(
+      String system, List<Message> history, List<ToolSpec> tools, Consumer<String> onText)
+      throws ModelException {
+    MessageCreateParams request = params(system, history, tools);
+    MessageAccumulator accumulator = MessageAccumulator.create();
+    try (StreamResponse<RawMessageStreamEvent> events =
+        client.messages().createStreaming(request)) {
+      events.stream()
+          .forEach(
+              event -> {
+                accumulator.accumulate(event);
+                event
+                    .contentBlockDelta()
+                    .flatMap(d -> d.delta().text())
+                    .ifPresent(t -> onText.accept(t.text()));
+              });
+      return reply(accumulator.message());
+    } catch (AnthropicException e) {
+      throw failure(e);
+    }
+  }
+
+  private MessageCreateParams params(String system, List<Message> history, List<ToolSpec> tools)
+      throws ModelException {
     MessageCreateParams.Builder request =
         MessageCreateParams.builder()
             .model(profile.model())
@@ -110,25 +147,31 @@ public final class AnthropicModel implements ModelClient {
         default -> throw new ModelException("unknown role " + m.role());
       }
     }
-    com.anthropic.models.messages.Message answer;
-    try {
-      answer = client.messages().create(request.build());
-    } catch (RateLimitException e) {
-      throw new ModelException("the API is limiting requests for this key; try again in a moment");
-    } catch (OverloadedException e) {
-      throw new ModelException("the API is overloaded; try again in a moment");
-    } catch (UnauthorizedException e) {
-      throw new ModelException("the API refused the key (is it valid for this organization?)");
-    } catch (PermissionDeniedException e) {
-      throw new ModelException("the key may not use this model or this feature");
-    } catch (AnthropicServiceException e) {
-      throw new ModelException("the API answered " + e.statusCode() + errorMessage(e.body()));
-    } catch (AnthropicIoException e) {
-      throw new ModelException("cannot reach the API at " + destination());
-    } catch (AnthropicException e) {
-      throw new ModelException("the API call failed: " + first(e.getMessage()));
+    return request.build();
+  }
+
+  /** What went wrong, in a short message that does not contain the key. */
+  private ModelException failure(AnthropicException e) {
+    if (e instanceof RateLimitException) {
+      return new ModelException("the API is limiting requests for this key; try again in a moment");
     }
-    return reply(answer);
+    if (e instanceof OverloadedException) {
+      return new ModelException("the API is overloaded; try again in a moment");
+    }
+    if (e instanceof UnauthorizedException) {
+      return new ModelException("the API refused the key (is it valid for this organization?)");
+    }
+    if (e instanceof PermissionDeniedException) {
+      return new ModelException("the key may not use this model or this feature");
+    }
+    if (e instanceof AnthropicServiceException service) {
+      return new ModelException(
+          "the API answered " + service.statusCode() + errorMessage(service.body()));
+    }
+    if (e instanceof AnthropicIoException) {
+      return new ModelException("cannot reach the API at " + destination());
+    }
+    return new ModelException("the API call failed: " + first(e.getMessage()));
   }
 
   private Reply reply(com.anthropic.models.messages.Message answer) {

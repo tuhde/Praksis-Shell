@@ -141,4 +141,105 @@ class ModelClientsTest {
                 .where())
         .isEqualTo("local");
   }
+
+  // ------------------------------------------------------------------------ streaming
+
+  private static final String OLLAMA_STREAM =
+      """
+      {"message":{"role":"assistant","content":"Let "},"done":false}
+      {"message":{"role":"assistant","content":"me look."},"done":false}
+      {"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"praksis_status","arguments":{"limit":3}}}]},"done":false}
+      {"message":{"role":"assistant","content":""},"done":true,"prompt_eval_count":11,"eval_count":5}
+      """;
+
+  @Test
+  void ollamaStreamsTheTextInPiecesAndKeepsTheToolCallAndTheCounts() throws Exception {
+    try (var server = new FakeServer(200, OLLAMA_STREAM, "application/x-ndjson")) {
+      List<String> pieces = new java.util.ArrayList<>();
+      ModelClient.Reply r =
+          new OllamaClient(server.profile("ollama")).chat("S", HISTORY, List.of(TOOL), pieces::add);
+      assertThat(pieces).containsExactly("Let ", "me look.");
+      assertThat(r.text()).isEqualTo("Let me look.");
+      assertThat(r.toolCalls()).hasSize(1);
+      assertThat(r.toolCalls().get(0).arguments()).containsEntry("limit", 3);
+      assertThat(r.tokensIn()).isEqualTo(11);
+      assertThat(r.tokensOut()).isEqualTo(5);
+      assertThat(json(server.seen.get(0).body()).get("stream").asBoolean()).isTrue();
+    }
+  }
+
+  @Test
+  void anErrorInTheMiddleOfAStreamIsAnErrorAndAStatusErrorKeepsItsWords() throws Exception {
+    try (var server =
+        new FakeServer(
+            200,
+            "{\"message\":{\"content\":\"a\"},\"done\":false}\n{\"error\":\"model crashed\"}\n",
+            "application/x-ndjson")) {
+      assertThatThrownBy(
+              () ->
+                  new OllamaClient(server.profile("ollama")).chat("S", HISTORY, List.of(), p -> {}))
+          .hasMessageContaining("model crashed");
+    }
+    try (var server = new FakeServer(404, "{\"error\":\"model 'm1' not found\"}")) {
+      assertThatThrownBy(
+              () ->
+                  new OllamaClient(server.profile("ollama")).chat("S", HISTORY, List.of(), p -> {}))
+          .hasMessageContaining("404")
+          .hasMessageContaining("model 'm1' not found");
+    }
+  }
+
+  @Test
+  void openAiStreamsServerSentEventsAndPutsAToolCallTogetherFromItsPieces() throws Exception {
+    String sse =
+        """
+        data: {"choices":[{"delta":{"role":"assistant","content":"Hel"}}]}
+
+        data: {"choices":[{"delta":{"content":"lo"}}]}
+
+        data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"abc","type":"function","function":{"name":"praksis_status","arguments":""}}]}}]}
+
+        data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"lim"}}]}}]}
+
+        data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"it\\":3}"}}]}}]}
+
+        data: {"choices":[],"usage":{"prompt_tokens":20,"completion_tokens":7}}
+
+        data: [DONE]
+
+        """;
+    try (var server = new FakeServer(200, sse, "text/event-stream")) {
+      List<String> pieces = new java.util.ArrayList<>();
+      ModelClient.Reply r =
+          new OpenAiClient(server.profile("openai")).chat("S", HISTORY, List.of(TOOL), pieces::add);
+      assertThat(pieces).containsExactly("Hel", "lo");
+      assertThat(r.text()).isEqualTo("Hello");
+      assertThat(r.toolCalls()).hasSize(1);
+      assertThat(r.toolCalls().get(0).id()).isEqualTo("abc");
+      assertThat(r.toolCalls().get(0).name()).isEqualTo("praksis_status");
+      assertThat(r.toolCalls().get(0).arguments()).containsEntry("limit", 3);
+      assertThat(r.tokensIn()).isEqualTo(20);
+      assertThat(r.tokensOut()).isEqualTo(7);
+      JsonNode body = json(server.seen.get(0).body());
+      assertThat(body.get("stream").asBoolean()).isTrue();
+      assertThat(body.at("/stream_options/include_usage").asBoolean()).isTrue();
+    }
+  }
+
+  @Test
+  void aModelThatStopsInTheMiddleOfAnAnswerIsGivenUpAfterTheTimeout() throws Exception {
+    Profile quick = null;
+    try (var server =
+        FakeServer.stalling("{\"message\":{\"content\":\"start\"},\"done\":false}\n", 4000)) {
+      quick = Profile.of("t", "ollama", server.base().toString(), "m1", "local", 1000, 100, null);
+      List<String> pieces = new java.util.ArrayList<>();
+      OllamaClient client = new OllamaClient(quick);
+      long began = System.nanoTime();
+      assertThatThrownBy(() -> client.chat("S", HISTORY, List.of(), pieces::add))
+          .isInstanceOf(ModelException.class)
+          .hasMessageContaining("stopped answering");
+      assertThat(pieces).containsExactly("start");
+      assertThat((System.nanoTime() - began) / 1_000_000).isLessThan(3500);
+    }
+  }
 }

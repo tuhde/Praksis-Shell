@@ -25,6 +25,17 @@ final class Terminal {
     return out.toString();
   }
 
+  /** A count of tokens in a few characters: 950, 12.3k, 1.2M. */
+  static String count(long n) {
+    if (n < 1000) {
+      return Long.toString(n);
+    }
+    if (n < 1_000_000) {
+      return String.format(java.util.Locale.ROOT, "%.1fk", n / 1000.0);
+    }
+    return String.format(java.util.Locale.ROOT, "%.1fM", n / 1_000_000.0);
+  }
+
   /** At most this many characters, for a line that shows arguments. */
   static String shorten(String text, int max) {
     String t = clean(text).replace('\n', ' ');

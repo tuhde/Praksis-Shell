@@ -2,13 +2,15 @@
 package it.uhde.praksis.shell.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
 
-/** The Ollama API: {@code POST /api/chat} without streaming. */
+/** The Ollama API: {@code POST /api/chat}, with or without streaming. */
 public final class OllamaClient extends HttpModel {
   public OllamaClient(Profile profile) {
     super(profile);
@@ -16,6 +18,75 @@ public final class OllamaClient extends HttpModel {
 
   @Override
   public Reply chat(String system, List<Message> history, List<ToolSpec> tools)
+      throws ModelException {
+    JsonNode tree = post("/api/chat", body(system, history, tools, false));
+    JsonNode message = tree.path("message");
+    if (!message.isObject()) {
+      throw new ModelException("the answer of the model has no message");
+    }
+    List<ToolCall> calls = new ArrayList<>();
+    toolCalls(message, calls);
+    return new Reply(
+        message.path("content").asText(""),
+        calls,
+        tree.path("prompt_eval_count").asLong(0),
+        tree.path("eval_count").asLong(0));
+  }
+
+  @Override
+  public Reply chat(
+      String system, List<Message> history, List<ToolSpec> tools, Consumer<String> onText)
+      throws ModelException {
+    StringBuilder text = new StringBuilder();
+    List<ToolCall> calls = new ArrayList<>();
+    long[] tokens = new long[2];
+    postLines(
+        "/api/chat",
+        body(system, history, tools, true),
+        line -> {
+          if (line.isBlank()) {
+            return;
+          }
+          JsonNode chunk;
+          try {
+            chunk = Json.MAPPER.readTree(line);
+          } catch (IOException e) {
+            throw new ModelException("the model server sent something that is not JSON");
+          }
+          if (chunk.has("error")) {
+            throw new ModelException("the model server reported: " + chunk.get("error").asText());
+          }
+          JsonNode message = chunk.path("message");
+          String piece = message.path("content").asText("");
+          if (!piece.isEmpty()) {
+            text.append(piece);
+            onText.accept(piece);
+          }
+          toolCalls(message, calls);
+          if (chunk.path("done").asBoolean(false)) {
+            tokens[0] = chunk.path("prompt_eval_count").asLong(0);
+            tokens[1] = chunk.path("eval_count").asLong(0);
+          }
+        });
+    return new Reply(text.toString(), calls, tokens[0], tokens[1]);
+  }
+
+  private static void toolCalls(JsonNode message, List<ToolCall> into) throws ModelException {
+    for (JsonNode c : message.path("tool_calls")) {
+      JsonNode f = c.path("function");
+      String name = f.path("name").asText("");
+      if (name.isEmpty()) {
+        throw new ModelException("the model asked for a tool without a name");
+      }
+      Map<String, Object> args =
+          f.path("arguments").isObject()
+              ? Json.map(f.get("arguments").toString())
+              : f.path("arguments").isTextual() ? Json.map(f.get("arguments").asText()) : Map.of();
+      into.add(new ToolCall("call-" + UUID.randomUUID(), name, args));
+    }
+  }
+
+  private String body(String system, List<Message> history, List<ToolSpec> tools, boolean stream)
       throws ModelException {
     List<Object> messages = new ArrayList<>();
     messages.add(Map.of("role", "system", "content", system));
@@ -38,7 +109,7 @@ public final class OllamaClient extends HttpModel {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("model", profile.model());
     body.put("messages", messages);
-    body.put("stream", false);
+    body.put("stream", stream);
     if (!tools.isEmpty()) {
       body.put("tools", tools.stream().map(OllamaClient::tool).toList());
     }
@@ -48,29 +119,7 @@ public final class OllamaClient extends HttpModel {
       options.put("temperature", profile.temperature());
     }
     body.put("options", options);
-    JsonNode tree = post("/api/chat", Json.write(body));
-    JsonNode message = tree.path("message");
-    if (!message.isObject()) {
-      throw new ModelException("the answer of the model has no message");
-    }
-    List<ToolCall> calls = new ArrayList<>();
-    for (JsonNode c : message.path("tool_calls")) {
-      JsonNode f = c.path("function");
-      String name = f.path("name").asText("");
-      if (name.isEmpty()) {
-        throw new ModelException("the model asked for a tool without a name");
-      }
-      Map<String, Object> args =
-          f.path("arguments").isObject()
-              ? Json.map(f.get("arguments").toString())
-              : f.path("arguments").isTextual() ? Json.map(f.get("arguments").asText()) : Map.of();
-      calls.add(new ToolCall("call-" + UUID.randomUUID(), name, args));
-    }
-    return new Reply(
-        message.path("content").asText(""),
-        calls,
-        tree.path("prompt_eval_count").asLong(0),
-        tree.path("eval_count").asLong(0));
+    return Json.write(body);
   }
 
   private static Map<String, Object> tool(ToolSpec t) {

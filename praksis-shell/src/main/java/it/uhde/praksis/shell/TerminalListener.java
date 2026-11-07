@@ -21,10 +21,25 @@ final class TerminalListener implements Listener {
     this.in = in;
   }
 
+  private boolean writing;
+
   @Override
-  public void text(String text) {
-    out.println();
-    out.println(Terminal.clean(text.strip()));
+  public void textDelta(String piece) {
+    if (!writing) {
+      out.println();
+      writing = true;
+    }
+    // each piece is cleaned as it arrives, so an escape sequence cannot be put together from pieces
+    out.print(Terminal.clean(piece));
+    out.flush();
+  }
+
+  @Override
+  public void textEnd() {
+    if (writing) {
+      out.println();
+      writing = false;
+    }
   }
 
   @Override
@@ -41,6 +56,18 @@ final class TerminalListener implements Listener {
             + result.text().length()
             + " characters"
             + (result.error() ? ": " + Terminal.shorten(result.text(), 120) : ""));
+  }
+
+  @Override
+  public void usage(long read, long written, long limit) {
+    out.println(
+        "  [tokens: "
+            + Terminal.count(read)
+            + " read, "
+            + Terminal.count(written)
+            + " written"
+            + (limit > 0 ? ", limit " + Terminal.count(limit) : "")
+            + "]");
   }
 
   @Override

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 class SessionTest {
   /** A model that says what the test wrote, one reply for each time it is asked. */
-  static final class Scripted implements ModelClient {
+  static class Scripted implements ModelClient {
     final List<Object> script;
     final List<List<Message>> asked = new ArrayList<>();
     String where = "local";
@@ -74,9 +74,25 @@ class SessionTest {
     boolean allow = true;
     int asked;
 
+    final StringBuilder text = new StringBuilder();
+    final List<String> pieces = new ArrayList<>();
+    final List<String> usages = new ArrayList<>();
+
     @Override
-    public void text(String text) {
+    public void textDelta(String piece) {
+      pieces.add(piece);
+      text.append(piece);
+    }
+
+    @Override
+    public void textEnd() {
       lines.add("text:" + text);
+      text.setLength(0);
+    }
+
+    @Override
+    public void usage(long read, long written, long limit) {
+      usages.add(read + "/" + written + "/" + limit);
     }
 
     @Override
@@ -289,5 +305,74 @@ class SessionTest {
     s.ask("x");
     List<Message> tools = s.history().stream().filter(m -> m.role().equals("tool")).toList();
     assertThat(tools).extracting(Message::error).containsExactly(false, true);
+  }
+
+  /** A model that streams: the text in pieces, then the reply. */
+  static final class Streaming extends Scripted {
+    final List<String> pieces;
+
+    Streaming(List<String> pieces, Object reply) {
+      super(reply);
+      this.pieces = pieces;
+    }
+
+    @Override
+    public Reply chat(
+        String system,
+        List<Message> history,
+        List<ToolSpec> tools,
+        java.util.function.Consumer<String> onText)
+        throws ModelException {
+      pieces.forEach(onText);
+      return chat(system, history, tools);
+    }
+  }
+
+  @Test
+  void aStreamedAnswerReachesTheListenerPieceByPieceAndIsEndedOnce() {
+    var model = new Streaming(List.of("Hel", "lo ", "there"), says("Hello there"));
+    session(model, ShellConfig.Limits.DEFAULT).ask("x");
+    assertThat(shown.pieces).containsExactly("Hel", "lo ", "there");
+    assertThat(shown.lines).containsExactly("text:Hello there");
+  }
+
+  @Test
+  void aModelThatDoesNotStreamGivesItsTextAsOnePiece() {
+    session(new Scripted(says("All fine.")), ShellConfig.Limits.DEFAULT).ask("x");
+    assertThat(shown.pieces).containsExactly("All fine.");
+    assertThat(shown.lines).containsExactly("text:All fine.");
+  }
+
+  @Test
+  void anAnswerWithoutTextHasNoTextAtAll() {
+    session(new Scripted(calls("look"), says("ok")), ShellConfig.Limits.DEFAULT).ask("x");
+    // the first answer only called a tool: no empty piece, no empty text line
+    assertThat(shown.pieces).containsExactly("ok");
+  }
+
+  @Test
+  void aStreamThatBreaksHalfwayEndsTheTextAndSaysWhy() {
+    var model = new Streaming(List.of("Par", "tial"), new ModelException("the connection broke"));
+    var s = session(model, ShellConfig.Limits.DEFAULT);
+    s.ask("x");
+    assertThat(shown.lines)
+        .containsExactly("text:Partial", "note:the model could not answer: the connection broke");
+    // the half answer is not part of the conversation
+    assertThat(s.history()).hasSize(1);
+  }
+
+  @Test
+  void theTokensSoFarAreReportedAfterEachRequestButNotWhenNothingWasSpent() {
+    var s = session(new Scripted(says("a")), ShellConfig.Limits.DEFAULT);
+    s.ask("one");
+    s.ask("two");
+    assertThat(shown.usages).containsExactly("10/2/0", "20/4/0");
+    var cloud = new Scripted(says("a"));
+    cloud.where = "cloud";
+    var blocked = session(cloud, new ShellConfig.Limits(30, 12, true, 500));
+    var quiet = new Shown();
+    new Session(cloud, bridge, quiet, new ShellConfig.Limits(30, 12, true, 500)).ask("x");
+    assertThat(quiet.usages).isEmpty();
+    assertThat(blocked.maxTokens()).isEqualTo(500);
   }
 }

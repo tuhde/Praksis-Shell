@@ -75,6 +75,11 @@ public final class Session {
     return tokensOut;
   }
 
+  /** The limit of tokens in this session, or 0 for none. */
+  public long maxTokens() {
+    return limits.maxTokens();
+  }
+
   public List<Message> history() {
     return List.copyOf(history);
   }
@@ -86,6 +91,16 @@ public final class Session {
 
   /** Handles one request of the person; the model's words go to the listener. */
   public void ask(String request) {
+    try {
+      answer(request);
+    } finally {
+      if (tokensIn + tokensOut > 0) {
+        listener.usage(tokensIn, tokensOut, limits.maxTokens());
+      }
+    }
+  }
+
+  private void answer(String request) {
     if (!cloudAllowed()) {
       listener.note(
           "Nothing was sent. This model runs in the cloud ("
@@ -108,18 +123,32 @@ public final class Session {
         return;
       }
       ModelClient.Reply reply;
+      boolean[] streamed = {false};
       try {
-        reply = model.chat(SYSTEM, history, tools.tools());
+        reply =
+            model.chat(
+                SYSTEM,
+                history,
+                tools.tools(),
+                piece -> {
+                  if (!piece.isEmpty()) {
+                    streamed[0] = true;
+                    listener.textDelta(piece);
+                  }
+                });
       } catch (ModelException e) {
+        if (streamed[0]) {
+          listener.textEnd();
+        }
         listener.note("the model could not answer: " + e.getMessage());
         return;
+      }
+      if (streamed[0]) {
+        listener.textEnd();
       }
       tokensIn += reply.tokensIn();
       tokensOut += reply.tokensOut();
       history.add(Message.assistant(reply.text(), reply.toolCalls(), reply.raw()));
-      if (!reply.text().isBlank()) {
-        listener.text(reply.text());
-      }
       if (reply.note() != null) {
         listener.note(reply.note());
       }

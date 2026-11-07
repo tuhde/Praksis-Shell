@@ -7,8 +7,8 @@ rules and history, checks branches of a layer and hands you proposals. Approvals
 stay with you, in the desktop program or with the `praksis` command; the model has no tool for them.
 
 **Status:** a model on this machine (the Ollama API or an OpenAI-compatible server) or the
-Anthropic API (through the official Java SDK), one request at a time, no streaming yet. Streaming
-and the display come next, then the tab in Praksis Desktop. The core is its own module,
+Anthropic API (through the official Java SDK), with streaming. The tab in Praksis Desktop comes
+next. The core is its own module,
 `praksis-shell-core` (the loop, the model clients, the MCP client; no terminal and no JavaFX), so
 that the desktop program can use it.
 
@@ -76,6 +76,20 @@ conversation goes on, because the API requires thinking blocks to be unedited. N
 server-side fallback for a request that the safety classifiers decline (the shell says that the
 model declined and why).
 
+## What you see
+
+- The model's text appears as it is written. A tool call is a line before it runs
+  (`-> praksis_status`, with `[may change]` if it could change something), and its result is
+  shown as a length.
+- After each request a line shows the tokens of the session: `[tokens: 5.9k read, 133 written,
+  limit 200k]`. `/usage` shows them again with the number of tool calls. Tokens read are summed
+  over all answers of the session, because each answer reads the conversation again; that is also
+  what is billed.
+- If the model stops in the middle of an answer (nothing for `timeout_ms`, or the connection
+  breaks), the text so far stays on the screen, a note says why, and the half answer is not part of
+  the conversation.
+- Commands: `/tools`, `/usage`, `/clear`, `/yes`, `/help`, `/quit`.
+
 ## What is kept apart
 
 - **Your commands and the model's words never mix.** A line that starts with `/` is yours
@@ -96,7 +110,8 @@ model declined and why).
 ## Tests
 
 `./mvnw verify`: the configuration, the model clients against a fake server (the request shapes
-and the answers, for the Anthropic API through the SDK), the key sources, the loop with a scripted
+and the answers, with and without streaming, for the Anthropic API through the SDK; a stream that
+stops is given up), the key sources, the loop with a scripted
 model (calls, declined calls, the budgets, the turns, the permission for the cloud, an error of the
 model), the MCP bridge against a real MCP server in its own process, and the terminal. No test
 calls the real Anthropic API.

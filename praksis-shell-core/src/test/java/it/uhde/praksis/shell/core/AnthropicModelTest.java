@@ -251,4 +251,82 @@ class AnthropicModelTest {
       assertThat(model(server).name()).isEqualTo("claude-test");
     }
   }
+
+  private static String event(String type, String data) {
+    return "event: " + type + "\ndata: " + data + "\n\n";
+  }
+
+  private static final String STREAM =
+      event(
+              "message_start",
+              "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-test\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":11,\"output_tokens\":1}}}")
+          + event(
+              "content_block_start",
+              "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\",\"thinking\":\"\",\"signature\":\"\"}}")
+          + event(
+              "content_block_delta",
+              "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"signature_delta\",\"signature\":\"sig123\"}}")
+          + event("content_block_stop", "{\"type\":\"content_block_stop\",\"index\":0}")
+          + event(
+              "content_block_start",
+              "{\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}")
+          + event(
+              "content_block_delta",
+              "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"Let me \"}}")
+          + event(
+              "content_block_delta",
+              "{\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"text_delta\",\"text\":\"look.\"}}")
+          + event("content_block_stop", "{\"type\":\"content_block_stop\",\"index\":1}")
+          + event(
+              "content_block_start",
+              "{\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"praksis_status\",\"input\":{}}}")
+          + event(
+              "content_block_delta",
+              "{\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"limit\\\"\"}}")
+          + event(
+              "content_block_delta",
+              "{\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\":3}\"}}")
+          + event("content_block_stop", "{\"type\":\"content_block_stop\",\"index\":2}")
+          + event(
+              "message_delta",
+              "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}")
+          + event("message_stop", "{\"type\":\"message_stop\"}");
+
+  @Test
+  void aStreamedAnswerGivesTextInPiecesAToolCallAndTheWholeMessageWithItsThinkingBlock()
+      throws Exception {
+    try (var server = new FakeServer(200, STREAM, "text/event-stream")) {
+      List<String> pieces = new java.util.ArrayList<>();
+      ModelClient.Reply r =
+          model(server).chat("S", List.of(Message.user("x")), List.of(TOOL), pieces::add);
+      assertThat(pieces).containsExactly("Let me ", "look.");
+      assertThat(r.text()).isEqualTo("Let me look.");
+      assertThat(r.toolCalls()).hasSize(1);
+      assertThat(r.toolCalls().get(0).id()).isEqualTo("toolu_1");
+      assertThat(r.toolCalls().get(0).arguments()).containsEntry("limit", 3);
+      assertThat(r.tokensIn()).isEqualTo(11);
+      assertThat(r.tokensOut()).isEqualTo(5);
+      assertThat(json(server.seen.get(0).body()).get("stream").asBoolean()).isTrue();
+
+      // the message that is kept has the thinking block with its signature, to be sent back as it
+      // is
+      var message = (com.anthropic.models.messages.Message) r.raw();
+      assertThat(message.content().get(0).thinking().orElseThrow().signature()).isEqualTo("sig123");
+    }
+  }
+
+  @Test
+  void aStreamThatTheServerRefusesIsTheSameErrorAsWithoutStreaming() throws Exception {
+    try (var server =
+        new FakeServer(
+            401,
+            "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"}}")) {
+      assertThatThrownBy(
+              () -> model(server).chat("S", List.of(Message.user("x")), List.of(), p -> {}))
+          .isInstanceOf(ModelException.class)
+          .hasMessageContaining("refused the key")
+          .message()
+          .doesNotContain("sk-ant-test");
+    }
+  }
 }

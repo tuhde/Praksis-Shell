@@ -37,6 +37,23 @@ public interface ModelClient {
   /** Asks for the next message. */
   Reply chat(String system, List<Message> history, List<ToolSpec> tools) throws ModelException;
 
+  /**
+   * Asks for the next message and hands the text to {@code onText} in pieces as it arrives. A
+   * client that cannot stream hands the whole text at the end.
+   */
+  default Reply chat(
+      String system,
+      List<Message> history,
+      List<ToolSpec> tools,
+      java.util.function.Consumer<String> onText)
+      throws ModelException {
+    Reply reply = chat(system, history, tools);
+    if (!reply.text().isEmpty()) {
+      onText.accept(reply.text());
+    }
+    return reply;
+  }
+
   /** Where the model runs, for the person to see: {@code local} or {@code cloud}. */
   String where();
 

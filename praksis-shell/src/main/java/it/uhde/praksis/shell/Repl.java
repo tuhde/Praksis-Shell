@@ -64,6 +64,19 @@ final class Repl {
                   + ".");
         }
       }
+      case "/usage" ->
+          out.println(
+              "Tokens in this session: "
+                  + Terminal.count(session.tokensIn())
+                  + " read, "
+                  + Terminal.count(session.tokensOut())
+                  + " written"
+                  + (session.maxTokens() > 0
+                      ? ", limit " + Terminal.count(session.maxTokens())
+                      : ", no limit")
+                  + "; "
+                  + session.toolCalls()
+                  + " tool calls.");
       case "/clear" -> {
         session.clear();
         out.println("The conversation is forgotten.");
@@ -74,8 +87,8 @@ final class Repl {
               .forEach(t -> out.println("  " + t.name() + (t.writes() ? "  [may change]" : "")));
       case "/help" ->
           out.println(
-              "Type a request. Commands: /tools (the tools Claude has), /clear (forget the"
-                  + " conversation), /yes (allow a model in the cloud to receive this session), /quit.\nApprovals, grants and plans are decided in the"
+              "Type a request. Commands: /tools (the tools Claude has), /usage (tokens spent),"
+                  + " /clear (forget the conversation), /yes (allow a model in the cloud to receive this session), /quit.\nApprovals, grants and plans are decided in the"
                   + " desktop program or with the praksis command, not here.");
       default -> out.println("Unknown command " + Terminal.shorten(line, 40) + " (try /help).");
     }
